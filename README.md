@@ -66,7 +66,13 @@ Efficient mappings:
 - ticket → details
 - slot → vehicle
 
-This ensures *O(1) lookup time complexity* for most operations.
+⚡ Time Complexity:
+
+Operation                Complexity
+Park Vehicle              O(n)
+Search Vehicle            O(log n)
+Remove Vehicle            O(log n)
+Show Active Vehicles      O(n)
 
 ---
 
