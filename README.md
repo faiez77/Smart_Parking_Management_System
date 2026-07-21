@@ -80,4 +80,4 @@ Show Active Vehicles      O(n)
 
 ### 🔹 Compile
 ```bash
-g++ main.cpp -o parking
+g++ Parking_System.cpp -o Parking_System
