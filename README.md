@@ -72,6 +72,14 @@ Search Vehicle            O(log n)
 Remove Vehicle            O(log n)
 Show Active Vehicles      O(n)
 
+🚀 Future Improvements
+
+🌐 Add GUI or Web Interface
+🧾 Parking history tracking
+💳 Payment integration
+🏢 Multi-floor parking system
+📱 Mobile app support
+
 ---
 
 ## ▶️ How to Run
