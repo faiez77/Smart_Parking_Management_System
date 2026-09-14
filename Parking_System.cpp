@@ -1,10 +1,17 @@
+// Smart Parking Management System
+// Console-based OOP parking simulator with O(1) slot allocation,
+// input validation, and persistent storage via file handling.
+
 #include <iostream>
 #include <vector>
 #include <map>
-#include <algorithm>
+#include <queue>
 #include <string>
 #include <ctime>
 #include <fstream>
+#include <limits>
+#include <algorithm>
+
 using namespace std;
 
 // ---------------- SLOT CLASS ----------------
@@ -13,264 +20,245 @@ public:
     int id;
     bool isOccupied;
 
-    Slot(int id) {
-        this->id = id;
-        this->isOccupied = false;
-    }
+    explicit Slot(int id) : id(id), isOccupied(false) {}
 };
 
 // ---------------- TICKET CLASS ----------------
 class Ticket {
 public:
     int ticketId;
-    int slotid;
-    time_t entrytime;
+    int slotId;
     string vehicleNumber;
+    time_t entryTime;
 
-    Ticket() {
-        ticketId = -1;
-        slotid = -1;
-        entrytime = 0;
-    }
+    Ticket() : ticketId(-1), slotId(-1), entryTime(0) {}
 
-    Ticket(int id, int slotid, string vnum) {
-        this->ticketId = id;
-        this->slotid = slotid;
-        this->vehicleNumber = vnum;
-        this->entrytime = time(0);
-    }
+    Ticket(int id, int slotId, const string& vnum)
+        : ticketId(id), slotId(slotId), vehicleNumber(vnum), entryTime(time(nullptr)) {}
 };
 
 // ---------------- PARKING LOT CLASS ----------------
-class Parkinglot {
-    vector<Slot> slots;
-
-    map<int, Ticket> activeTickets;      // ticketID → Ticket
-    map<string, int> vehicleToTicket;    // vehicle → ticketID
-    map<int, string> slotToVehicle;      // slot → vehicle
-
+class ParkingLot {
+    vector<Slot> slots;                 // index i holds slot with id (i+1) -- enables O(1) lookup
+    map<int, Ticket> activeTickets;     // ticketId -> Ticket
+    map<string, int> vehicleToTicket;   // vehicleNumber -> ticketId
+    queue<int> freeSlotIds;             // O(1) allocation instead of scanning for a free slot
     int ticketCounter;
 
-public:
-    Parkinglot(int totalSlots) {
-        ticketCounter = 1;
+    static constexpr int RATE_PER_MINUTE = 2;   // Rs. 2 per minute
+    static constexpr int MINIMUM_FARE = 10;     // Rs. 10 minimum charge, even for very short stays
 
+public:
+    explicit ParkingLot(int totalSlots) : ticketCounter(1) {
         for (int i = 1; i <= totalSlots; i++) {
             slots.push_back(Slot(i));
+            freeSlotIds.push(i);
         }
         loadFromFile();
     }
 
     // ---------------- PARK VEHICLE ----------------
-    void parkvehicle(string vehiclenumber) {
-
-        if (vehicleToTicket.find(vehiclenumber) != vehicleToTicket.end()) {
+    // O(1): pulls the next free slot id from the queue instead of scanning.
+    void parkVehicle(const string& vehicleNumber) {
+        if (vehicleNumber.empty()) {
+            cout << "Vehicle number cannot be empty.\n";
+            return;
+        }
+        if (vehicleToTicket.count(vehicleNumber)) {
             cout << "Vehicle already parked!\n";
             return;
         }
-
-        for (auto &slot : slots) {
-            if (!slot.isOccupied) {
-                slot.isOccupied = true;
-
-                int ticketId = ticketCounter++;
-
-                Ticket t(ticketId, slot.id, vehiclenumber);
-
-                activeTickets[ticketId] = t;
-                vehicleToTicket[vehiclenumber] = ticketId;
-                slotToVehicle[slot.id] = vehiclenumber;
-
-                saveTofile();
-
-                cout << "Vehicle parked at slot " << slot.id << endl;
-                cout << "Ticket ID: " << ticketId << endl;
-
-                return;
-            }
+        if (freeSlotIds.empty()) {
+            cout << "Parking Full!\n";
+            return;
         }
 
-        cout << "Parking Full!\n";
-        
+        int slotId = freeSlotIds.front();
+        freeSlotIds.pop();
+        slots[slotId - 1].isOccupied = true;
+
+        int ticketId = ticketCounter++;
+        Ticket t(ticketId, slotId, vehicleNumber);
+        activeTickets[ticketId] = t;
+        vehicleToTicket[vehicleNumber] = ticketId;
+
+        saveToFile();
+        cout << "Vehicle parked at slot " << slotId << "\n";
+        cout << "Ticket ID: " << ticketId << "\n";
     }
 
     // ---------------- REMOVE VEHICLE ----------------
-    void removeVehicle(string vehiclenumber) {
-
-        if (vehicleToTicket.find(vehiclenumber) == vehicleToTicket.end()) {
+    // O(1) slot release via direct indexing (slots[id-1]) instead of a linear scan.
+    void removeVehicle(const string& vehicleNumber) {
+        auto it = vehicleToTicket.find(vehicleNumber);
+        if (it == vehicleToTicket.end()) {
             cout << "Vehicle not found\n";
             return;
         }
 
-        int ticketId = vehicleToTicket[vehiclenumber];
+        int ticketId = it->second;
         Ticket t = activeTickets[ticketId];
 
-        // free slot
-        for (auto &slot : slots) {
-            if (slot.id == t.slotid) {
-                slot.isOccupied = false;
-                break;
-            }
-        }
+        slots[t.slotId - 1].isOccupied = false;
+        freeSlotIds.push(t.slotId);
 
-        slotToVehicle.erase(t.slotid);
+        time_t exitTime = time(nullptr);
+        int durationMinutes = static_cast<int>((exitTime - t.entryTime) / 60);
+        // Round up any partial minute so a 10-second stay still counts as 1 minute,
+        // and apply a minimum fare so very short stays aren't billed Rs. 0.
+        if ((exitTime - t.entryTime) % 60 != 0) durationMinutes += 1;
+        int cost = max(MINIMUM_FARE, durationMinutes * RATE_PER_MINUTE);
 
-        time_t exittime = time(0);
-        int duration = (exittime - t.entrytime) / 60;
-        int cost = duration * 2;   // ₹2 per minute
-
-        cout << "Vehicle exited from slot " << t.slotid << endl;
-        cout << "Duration: " << duration << " minutes\n";
-        cout << "Total cost: " << cost << endl;
+        cout << "Vehicle exited from slot " << t.slotId << "\n";
+        cout << "Duration: " << durationMinutes << " minute(s)\n";
+        cout << "Total cost: Rs. " << cost << "\n";
 
         activeTickets.erase(ticketId);
-        vehicleToTicket.erase(vehiclenumber);
-
-        saveTofile();
+        vehicleToTicket.erase(vehicleNumber);
+        saveToFile();
     }
 
-    // ------------Search Vehicle-----------------
-    void searchVehicle(string vehiclenumber){
-        if(vehicleToTicket.find(vehiclenumber)==vehicleToTicket.end()){
-            cout<<"Vehicle not found in parking \n";
+    // ---------------- SEARCH VEHICLE ----------------
+    // O(log n) via std::map lookup.
+    void searchVehicle(const string& vehicleNumber) const {
+        auto it = vehicleToTicket.find(vehicleNumber);
+        if (it == vehicleToTicket.end()) {
+            cout << "Vehicle not found in parking\n";
             return;
         }
-    int ticketId = vehicleToTicket[vehiclenumber];
-    Ticket t = activeTickets[ticketId];
-    
-    cout<<"\n--- Vehicle Found ---\n";
-    cout<<"Vehicle Number: "<<vehiclenumber<<endl;
-    cout<<"Ticket Id: "<<t.ticketId<<endl;
-    cout<<"Slot Number: "<<t.slotid<<endl;
-
-    cout<<"Entry Time: "<<ctime(&t.entrytime);
-
+        const Ticket& t = activeTickets.at(it->second);
+        cout << "\n--- Vehicle Found ---\n";
+        cout << "Vehicle Number: " << vehicleNumber << "\n";
+        cout << "Ticket ID: " << t.ticketId << "\n";
+        cout << "Slot Number: " << t.slotId << "\n";
+        cout << "Entry Time: " << ctime(&t.entryTime);
     }
 
     // ---------------- SHOW SLOT STATUS ----------------
-    void showParkingStatus() {
+    void showParkingStatus() const {
         cout << "\n--- Parking Slots ---\n";
-
-        for (auto &slot : slots) {
-            cout << "Slot " << slot.id << " : ";
-
-            if (slot.isOccupied) {
-                cout << "Occupied by " << slotToVehicle[slot.id] << endl;
-            } else {
-                cout << "Free\n";
-            }
+        for (const auto& slot : slots) {
+            cout << "Slot " << slot.id << " : " << (slot.isOccupied ? "Occupied" : "Free") << "\n";
         }
     }
 
     // ---------------- SHOW ACTIVE VEHICLES ----------------
-    void showActiveVehicles() {
+    void showActiveVehicles() const {
         cout << "\n--- Active Vehicles ---\n";
-
         if (activeTickets.empty()) {
             cout << "No vehicles parked\n";
             return;
         }
-
-        for (auto &it : activeTickets) {
-            Ticket t = it.second;
-
+        for (const auto& entry : activeTickets) {
+            const Ticket& t = entry.second;
             cout << "Ticket ID: " << t.ticketId
                  << ", Vehicle: " << t.vehicleNumber
-                 << ", Slot: " << t.slotid << endl;
+                 << ", Slot: " << t.slotId << "\n";
         }
     }
 
-// -----Saving----
-void saveTofile(){
-    ofstream file("parking.txt");
-    for(auto &entry : activeTickets){
-        Ticket t = entry.second;
-        file << t.vehicleNumber <<" "
-        << t.slotid <<" "
-        << t.entrytime <<" "
-        << t.ticketId <<endl;
+    // ---------------- FILE PERSISTENCE ----------------
+    void saveToFile() const {
+        ofstream file("parking.txt");
+        if (!file) {
+            cerr << "Warning: could not write parking.txt (changes not saved to disk)\n";
+            return;
+        }
+        for (const auto& entry : activeTickets) {
+            const Ticket& t = entry.second;
+            file << t.vehicleNumber << " "
+                 << t.slotId << " "
+                 << t.entryTime << " "
+                 << t.ticketId << "\n";
+        }
     }
-    file.close();
-}
-void loadFromFile() {
-    ifstream file("parking.txt");
-    
-    if(!file) return;
 
-    string vehicle;
-    int slotid, ticketId;
-    time_t entrytime;
+    void loadFromFile() {
+        ifstream file("parking.txt");
+        if (!file) return;  // no saved state yet -- not an error
 
-    while (file >> vehicle >> slotid >> entrytime >> ticketId) {
+        string vehicle;
+        int slotId, ticketId;
+        time_t entryTime;
+        int lineNum = 0;
 
-        // mark slot occupied
-        for (auto &slot : slots) {
-            if (slot.id == slotid) {
-                slot.isOccupied = true;
-                break;
+        while (file >> vehicle >> slotId >> entryTime >> ticketId) {
+            lineNum++;
+            if (slotId < 1 || slotId > static_cast<int>(slots.size())) {
+                cerr << "Warning: skipping corrupt record on line " << lineNum
+                     << " (invalid slot id " << slotId << ")\n";
+                continue;
             }
+            slots[slotId - 1].isOccupied = true;
+
+            Ticket t;
+            t.vehicleNumber = vehicle;
+            t.slotId = slotId;
+            t.entryTime = entryTime;
+            t.ticketId = ticketId;
+            activeTickets[ticketId] = t;
+            vehicleToTicket[vehicle] = ticketId;
+            ticketCounter = max(ticketCounter, ticketId + 1);
         }
 
-        // recreate ticket
-        Ticket t;
-        t.vehicleNumber = vehicle;
-        t.slotid = slotid;
-        t.entrytime = entrytime;
-        t.ticketId = ticketId;
-
-        activeTickets[ticketId] = t;
-        vehicleToTicket[vehicle] = ticketId;
-        slotToVehicle[slotid] = vehicle;
-
-        ticketCounter = max(ticketCounter,ticketId+1);
+        // Rebuild the free-slot queue from whatever wasn't marked occupied above.
+        while (!freeSlotIds.empty()) freeSlotIds.pop();
+        for (const auto& slot : slots) {
+            if (!slot.isOccupied) freeSlotIds.push(slot.id);
+        }
     }
-
-    file.close();
-}
 };
+
+// ---------------- INPUT HELPER ----------------
+// Guards against non-numeric input, which would otherwise put cin into a
+// permanent fail state and spin the menu loop forever.
+int readMenuChoice() {
+    int choice;
+    while (!(cin >> choice)) {
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cout << "Invalid input. Please enter a number: ";
+    }
+    return choice;
+}
 
 // ---------------- MAIN FUNCTION ----------------
 int main() {
-    Parkinglot p(5);
-
-    int choice;
+    ParkingLot p(5);
     string vehicle;
 
     while (true) {
         cout << "\n1. Park Vehicle\n";
         cout << "2. Remove Vehicle\n";
         cout << "3. Show Slots\n";
-        cout<< "4.Search Vehicle\n";
+        cout << "4. Search Vehicle\n";
         cout << "5. Show Active Vehicles\n";
         cout << "6. Exit\n";
+        cout << "Choice: ";
 
-        cin >> choice;
+        int choice = readMenuChoice();
 
         if (choice == 1) {
             cout << "Enter vehicle number: ";
             cin >> vehicle;
-            p.parkvehicle(vehicle);
-        }
-        else if (choice == 2) {
+            p.parkVehicle(vehicle);
+        } else if (choice == 2) {
             cout << "Enter vehicle number: ";
             cin >> vehicle;
             p.removeVehicle(vehicle);
-        }
-        else if (choice == 3) {
+        } else if (choice == 3) {
             p.showParkingStatus();
-        }
-        else if (choice == 4) {
-            cout<<"Enter Vehicle number: ";
-            cin>>vehicle;
+        } else if (choice == 4) {
+            cout << "Enter vehicle number: ";
+            cin >> vehicle;
             p.searchVehicle(vehicle);
-        }
-        else if (choice == 5) {
+        } else if (choice == 5) {
             p.showActiveVehicles();
-        }
-        else {
+        } else if (choice == 6) {
             break;
+        } else {
+            cout << "Invalid option. Choose 1-6.\n";
         }
     }
-
     return 0;
 }
