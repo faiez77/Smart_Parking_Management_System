@@ -35,7 +35,7 @@ Three core classes:
 - **`Ticket`** — vehicle entry record (ticket id, slot id, entry time, vehicle number)
 - **`ParkingLot`** — core logic: allocation, billing, persistence
 
-### ⚡ Time Complexity (corrected)
+### ⚡ Time Complexity 
 
 Slot ids are sequential (1 to n), so slot lookup and release use direct indexing (`slots[id-1]`) instead of scanning — this keeps allocation and release O(1):
 
