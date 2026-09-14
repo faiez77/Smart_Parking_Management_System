@@ -45,8 +45,8 @@ class ParkingLot {
     queue<int> freeSlotIds;             // O(1) allocation instead of scanning for a free slot
     int ticketCounter;
 
-    static constexpr int RATE_PER_MINUTE = 2;   // Rs. 2 per minute
-    static constexpr int MINIMUM_FARE = 10;     // Rs. 10 minimum charge, even for very short stays
+    static const int RATE_PER_MINUTE = 2;   // Rs. 2 per minute
+    static const int MINIMUM_FARE = 10;     // Rs. 10 minimum charge, even for very short stays
 
 public:
     explicit ParkingLot(int totalSlots) : ticketCounter(1) {
@@ -107,7 +107,8 @@ public:
         // Round up any partial minute so a 10-second stay still counts as 1 minute,
         // and apply a minimum fare so very short stays aren't billed Rs. 0.
         if ((exitTime - t.entryTime) % 60 != 0) durationMinutes += 1;
-        int cost = max(MINIMUM_FARE, durationMinutes * RATE_PER_MINUTE);
+        int cost = durationMinutes * RATE_PER_MINUTE;
+        if (cost < MINIMUM_FARE) cost = MINIMUM_FARE;
 
         cout << "Vehicle exited from slot " << t.slotId << "\n";
         cout << "Duration: " << durationMinutes << " minute(s)\n";
