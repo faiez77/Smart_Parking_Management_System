@@ -1,6 +1,6 @@
 # 🚗 Smart Parking Management System
 
-![C++](https://img.shields.io/badge/Language-C%2B%2B17-blue)
+![C++](https://img.shields.io/badge/Language-C%2B%2B-blue)
 ![OOP](https://img.shields.io/badge/Concept-OOP-green)
 ![Status](https://img.shields.io/badge/Project-Complete-brightgreen)
 
@@ -17,11 +17,11 @@ A console-based parking management system in C++ that simulates real-world parki
 - 💰 **Duration-Based Billing** — ₹2/minute, rounded up, with a ₹10 minimum fare
 - 💾 **Data Persistence** — parking state survives program restarts via file handling (`fstream`)
 - ✅ **Input Validation** — non-numeric menu input is rejected and re-prompted, not left to hang or crash
-- 🧪 **Edge-case test suite** — see [Testing](#-testing) below
+- 🛡️ **Edge-case handling** — see [Edge Cases Handled](#️-edge-cases-handled) below
 
 ## 🛠️ Tech Stack
 
-- **Language:** C++17
+- **Language:** C++ (C++11 or later)
 - **Concepts:** OOP (encapsulation), RAII-style file handling
 - **Data structures:** `vector` (slot storage, direct-indexed), `queue` (free-slot allocation), `map` (ticket/vehicle lookup)
 - **File handling:** `fstream`
@@ -37,7 +37,7 @@ Three core classes:
 
 ### ⚡ Time Complexity (corrected)
 
-The original version of this project claimed `O(log n)` for slot removal, but the implementation actually did a **linear scan** through the slot list to free a slot — a real discrepancy between the documented and actual complexity. This version fixes both the complexity *and* the documentation to match:
+Slot ids are sequential (1 to n), so slot lookup and release use direct indexing (`slots[id-1]`) instead of scanning — this keeps allocation and release O(1):
 
 | Operation | Complexity | How |
 |---|---|---|
@@ -46,28 +46,24 @@ The original version of this project claimed `O(log n)` for slot removal, but th
 | Search Vehicle | **O(log n)** | `std::map` lookup by vehicle number |
 | Show Active Vehicles | **O(n)** | Must visit every active ticket |
 
-## 🔧 What changed from the original version
+## 💾 File Persistence
 
-This started as a working but unpolished console app. Fixes made:
+Parking state survives program restarts using plain-text file storage (`parking.txt`), written via `fstream`:
 
-1. **Input validation** — the original used `cin >> choice` with no guard; non-numeric input put `cin` into a permanent fail state and spun the menu loop forever. Now invalid input is caught, cleared, and re-prompted.
-2. **O(1) slot allocation** — the original scanned the whole slot vector to find a free one on every park/remove call, despite slot ids being sequential (1..n) and directly indexable. Replaced with a `queue<int>` of free slot ids plus direct `slots[id-1]` access.
-3. **Corrected the complexity table** — documented complexity now matches what the code actually does (see above).
-4. **Billing edge case** — the original computed `duration_minutes * 2` with truncated integer minutes, so a vehicle parked and removed within the same minute was billed ₹0. Now duration rounds up on any partial minute, and a ₹10 minimum fare applies.
-5. **File I/O error handling** — `saveToFile`/`loadFromFile` now check the stream state and warn (rather than silently failing or crashing) on a write failure or a corrupt record.
-6. **Const-correctness & reference semantics** — read-only methods are now `const`; loops iterate by `const auto&` instead of copying `Slot`/`Ticket` objects.
+- **On every park/remove**, the full list of currently active tickets is rewritten to `parking.txt` — one line per active vehicle, in the format: `vehicleNumber slotId entryTimestamp ticketId`
+- **On startup**, `ParkingLot`'s constructor reads `parking.txt` (if it exists) and reconstructs the in-memory state: which slots are occupied, active tickets, and the vehicle-to-ticket mapping — so the program resumes exactly where it left off
+- **First run**, or if the file is missing, this is treated as an empty lot rather than an error
+- **Corrupt or malformed lines** (e.g. an out-of-range slot id) are skipped individually with a warning, rather than aborting the whole load
+- The ticket ID counter is restored to one past the highest ticket ID found on disk, so new tickets never collide with previously saved ones
 
-## ✅ Testing
+## 🛡️ Edge Cases Handled
 
-`test_edge_cases.sh` pipes scripted menu input into the compiled binary and checks each output against an expected result — no test framework dependency, since the program is a simple console I/O loop.
-
-```bash
-bash test_edge_cases.sh
-```
-
-Covers: successful parking, duplicate-vehicle rejection, searching/removing a vehicle that doesn't exist, filling all slots (`Parking Full`), non-numeric menu input (must not hang or crash), and the minimum-fare billing edge case.
-
-Current result: **7/7 passing.**
+- **Invalid menu input** — typing a non-numeric choice (e.g. "abc") is caught and re-prompted instead of crashing or hanging the program
+- **Duplicate vehicle** — parking a vehicle number that's already active is rejected with a clear message
+- **Vehicle not found** — searching for or removing a vehicle not currently parked is handled gracefully, not a crash
+- **Parking full** — once all slots are occupied, further park attempts are rejected with `Parking Full!`
+- **Very short stays** — a vehicle parked and removed within the same minute is still billed a ₹10 minimum fare, not ₹0
+- **Corrupt/partial save file** — if `parking.txt` has an invalid record (e.g. an out-of-range slot id), that line is skipped with a warning instead of crashing on load
 
 ## ▶️ How to Run
 
@@ -75,7 +71,7 @@ Current result: **7/7 passing.**
 ```bash
 make
 ```
-(or directly: `g++ -std=c++17 -Wall -Wextra Parking_System.cpp -o Parking_System`)
+(or directly: `g++ -Wall -Wextra Parking_System.cpp -o Parking_System`)
 
 ### Run
 ```bash
